@@ -1,25 +1,75 @@
 # CHIPMODS
 
-Generative drum, bass, drone & reel voices plus a probabilistic CV brain for
-Eurorack, on a Raspberry Pi Pico (RP2040). C firmware built with the Pico SDK.
+**CHIPMODS** is an extended C firmware for the CHIPTUNE Eurorack module by
+[TECLA](https://www.instagram.com/tecla.cat/) — generative drums, bass, drone
+and reel voices plus a probabilistic CV brain, on a Raspberry Pi Pico
+(RP2040). It comes from **CHIPDRUM**, the original C rewrite of the module's
+[CircuitPython firmware](https://github.com/TECLA-code/CHIPTUNE), and keeps
+CHIPDRUM's real-time engine intact while extending it: CHIPMODS adds the two
+reel modes (**MORPH** and **MARBLE**) and the web updater on top of everything
+CHIPDRUM already did. Nothing is modified on the PCB.
 
-Three PWM jacks that serve as square-wave oscillators, 8-bit DAC outputs or
-steady CV, depending on the mode — eight generative modes: two drum machines,
-a Turing-machine bass loop, three drones, a live-recorded Morphagene-flavoured
-reel looper (MORPH) and a Marbles-flavoured random-voltage brain (MARBLE).
-External clock input and master clock output. A web updater
-([`./web/update.sh`](#web-updater-build--flash-from-the-browser)) builds any
-branch and flashes the module over USB with no buttons.
+CHIPMODS drives three PWM jacks that serve as square-wave oscillators, 8-bit
+DAC outputs or steady CV, depending on the mode — **eight generative modes**:
 
-It runs on stock CHIPTUNE hardware, designed and built by
-[TECLA](https://www.instagram.com/tecla.cat/), and replaces the
-[CircuitPython firmware](https://github.com/TECLA-code/CHIPTUNE) the module
-ships with. Nothing is modified on the PCB — see
-[Coming from the original TECLA firmware](#coming-from-the-original-tecla-firmware)
-for what changes, and [Reverting](#reverting-to-the-original-tecla-firmware)
-for how to put the Python firmware back.
+- the two drum machines inherited from CHIPDRUM: **DRUMS** (sampled) and
+  **SYNDRUM** (fully synthesized),
+- the Turing-machine bass loop **BASSLOOP** and the three drones
+  (**DRONER**, **ORGAN**, **GRINDER**), also from CHIPDRUM,
+- **MORPH**, a live-recorded Morphagene-flavoured reel looper, new in CHIPMODS,
+- **MARBLE**, a Marbles-flavoured probabilistic CV brain, also new in CHIPMODS.
+
+External clock input and master clock output are always available, and the
+CHIPMODS web updater ([`./web/update.sh`](#web-updater-build--flash-chipmods-from-the-browser))
+builds any branch and flashes the module over USB with no buttons.
+
+> The module hardware, PCB, panel and enclosure are TECLA's design. CHIPMODS
+> is an independent, unofficial extension of CHIPDRUM — see
+> [Lineage: from CHIPDRUM to CHIPMODS](#lineage-from-chipdrum-to-chipmods)
+> and [Acknowledgements](#acknowledgements), and
+> [Coming from the original TECLA firmware](#coming-from-the-original-tecla-firmware)
+> for what changes when you install it.
+
+## Contents
+
+- [Lineage: from CHIPDRUM to CHIPMODS](#lineage-from-chipdrum-to-chipmods)
+- [Panel / pin map](#panel--pin-map)
+- [Clock](#clock)
+- [Modes](#modes)
+- [Reel modes: MORPH & MARBLE](#reel-modes-morph--marble)
+- [Controls](#controls)
+- [Drums: samples and synthesis](#drums-samples-and-synthesis)
+- [Audio quality (the drum output)](#audio-quality-the-drum-output)
+- [Building CHIPMODS](#building-chipmods)
+- [Flashing CHIPMODS](#flashing-chipmods)
+- [Coming from the original TECLA firmware](#coming-from-the-original-tecla-firmware)
+- [Reverting to the original TECLA firmware](#reverting-to-the-original-tecla-firmware)
+- [Web updater (build & flash CHIPMODS from the browser)](#web-updater-build--flash-chipmods-from-the-browser)
+- [Tests](#tests)
+- [Architecture](#architecture)
+- [Acknowledgements](#acknowledgements)
+
+## Lineage: from CHIPDRUM to CHIPMODS
+
+Three firmwares have lived on this module:
+
+1. **CHIPTUNE by TECLA** — the CircuitPython program the module ships with.
+2. **CHIPDRUM** — the native C rewrite: the 25 kHz fixed-point audio engine,
+   the six drum/bass/drone modes (DRUMS, SYNDRUM, BASSLOOP, DRONER, ORGAN,
+   GRINDER), the Truchets pattern banks and the button-free USB flashing.
+3. **CHIPMODS (this firmware)** — CHIPDRUM's engine and six modes, unchanged,
+   extended with the two reel modes MORPH and MARBLE, the analog clock-input
+   reader's atomic ADC path, and the browser-based web updater.
+
+So where the docs say "CHIPDRUM's engine" they mean the code this project was
+forked from — and it really is that code: drum timing, sample playback and
+synth voices in CHIPMODS are byte-for-byte what CHIPDRUM shipped. The build
+output is still named `chipdrum.uf2` for the same historical reason; reflashing
+over either predecessor is a single UF2 copy.
 
 ## Panel / pin map
+
+CHIPMODS uses the stock CHIPTUNE hardware as-is:
 
 | Jack / control | Pin | Function |
 |---|---|---|
@@ -38,25 +88,25 @@ LED3–7 = selected parameter slot.
 
 ## Clock
 
-- One tick = one 16th note. **CLK OUT emits every tick** — CHIPDRUM can be the
+- One tick = one 16th note. **CLK OUT emits every tick** — CHIPMODS can be the
   master clock of your rack.
-- Patch a clock into **CLK IN** and the engine locks to it (LED1 lights). The
+- Patch a clock into **CLK IN** and CHIPMODS locks to it (LED1 lights). The
   slider then selects **÷8 ÷6 ÷4 ÷3 ÷2 ×1 ×2 ×3 ×4** — clock multiplication
   works because incoming periods are measured with microsecond precision.
 - Unplug the clock and the internal tempo returns after 2 s.
 
 ## Modes
 
-| Mode | What it does | CV1 |
-|---|---|---|
-| **DRUMS** | 32-step sample drum machine: kick, snare and hat one per output jack, driven by Truchets' OG Grids, Electronic and Breakbeat pattern banks | FILL/DENSITY: noon is stable, below drops hits, above adds probabilistic fills |
-| **SYNDRUM** | The same banked patterns, but every hit synthesized live — 909-flavoured with an industrial, ring-modulated snare. TUNE and DECAY per drum reach where a fixed sample cannot | FILL/DENSITY, as DRUMS |
-| **BASSLOOP** | Turing-machine shift register riff over a root-heavy pitch set {I, I, V↓, I↑}; ends of the knob lock the loop, center mutates | lock ↔ mutate |
-| **DRONER** | Three detuned voices on the root, rhythmically chopped, duty-cycle LFO for movement | detune width (cents) |
-| **ORGAN** | Harmonic-stack drone: fundamental + pedal + a drawbar harmonic. Three LFOs at irrational rate ratios keep the timbres drifting, so the stack shimmers instead of pulsing | drawbar registration (2nd…8th harmonic) |
-| **GRINDER** | Beating/dissonant drone. The third voice sits an INTERVAL away and is offset by CV1 in **hertz**, so the beat rate stays constant as you transpose. PULSE narrows the duty for a reedy grind | beat rate (0.05–8 Hz) |
-| **MORPH** | Live-reel voice (Morphagene-flavoured): record the CV1 jack into a 3 s RAM reel with Sound-On-Sound overdub, then play it back as three looping gene heads across 8 splices | MORPH crossfade between the current and next splice (live) |
-| **MARBLE** | Probabilistic CV + gate brain (Marbles-flavoured): two stepped-CV streams and a gate stream whose fire probabilities come from the same Truchets 5×5 morph banks the drums use | CHAOS: blends the map's deterministic odds into coin flips |
+| Mode | Origin | What it does | CV1 |
+|---|---|---|---|
+| **DRUMS** | CHIPDRUM | 32-step sample drum machine: kick, snare and hat one per output jack, driven by Truchets' OG Grids, Electronic and Breakbeat pattern banks | FILL/DENSITY: noon is stable, below drops hits, above adds probabilistic fills |
+| **SYNDRUM** | CHIPDRUM | The same banked patterns, but every hit synthesized live — 909-flavoured with an industrial, ring-modulated snare. TUNE and DECAY per drum reach where a fixed sample cannot | FILL/DENSITY, as DRUMS |
+| **BASSLOOP** | CHIPDRUM | Turing-machine shift register riff over a root-heavy pitch set {I, I, V↓, I↑}; ends of the knob lock the loop, center mutates | lock ↔ mutate |
+| **DRONER** | CHIPDRUM | Three detuned voices on the root, rhythmically chopped, duty-cycle LFO for movement | detune width (cents) |
+| **ORGAN** | CHIPDRUM | Harmonic-stack drone: fundamental + pedal + a drawbar harmonic. Three LFOs at irrational rate ratios keep the timbres drifting, so the stack shimmers instead of pulsing | drawbar registration (2nd…8th harmonic) |
+| **GRINDER** | CHIPDRUM | Beating/dissonant drone. The third voice sits an INTERVAL away and is offset by CV1 in **hertz**, so the beat rate stays constant as you transpose. PULSE narrows the duty for a reedy grind | beat rate (0.05–8 Hz) |
+| **MORPH** | new in CHIPMODS | Live-reel voice (Morphagene-flavoured): record the CV1 jack into a 3 s RAM reel with Sound-On-Sound overdub, then play it back as three looping gene heads across 8 splices | MORPH crossfade between the current and next splice (live) |
+| **MARBLE** | new in CHIPMODS | Probabilistic CV + gate brain (Marbles-flavoured): two stepped-CV streams and a gate stream whose fire probabilities come from the same Truchets 5×5 morph banks the drums use | CHAOS: blends the map's deterministic odds into coin flips |
 
 The three drones share a **CHOP** parameter (HOLD, 8THS, GALLOP, OFFBEAT,
 QUARTER, TRIPLET) that rhythmically gates all voices. Their detuning and
@@ -74,9 +124,10 @@ none of the three mean anything to a one-shot.
 
 ## Reel modes: MORPH & MARBLE
 
-These two modes share the audio engine at a different job: instead of one-shot
-samples they put the three PWM slices to work continuously — as **gene heads
-reading a live-recorded reel** (MORPH) or as **steady CV levels** (MARBLE).
+These two modes are CHIPMODS's extension of the CHIPDRUM engine: instead of
+one-shot samples they put the three PWM slices to work continuously — as
+**gene heads reading a live-recorded reel** (MORPH) or as **steady CV levels**
+(MARBLE).
 
 **MORPH — the live reel.** The CV1 jack (GP26) becomes a DC-coupled audio
 input, sampled at 25 kHz into a 3-second RAM reel. Tap EXTRA2 to punch REC in
@@ -93,24 +144,24 @@ Playback is three heads, mixed at the panel jacks like everything else:
 `SPLICE` selects one of 8 genes, `SIZE` trims the loop to 40–800 ms, `SPEED`
 runs the heads ±12 semitones (**negative = reverse**), `FX` adds bit‑crush or
 tilt filtering (feedforward only, so they can never run away). Heads re-arm
-on every clock tick — the reel locks to internal tempo or a clock patched
-into CLK IN, and EXTRA1's manual tick re-triggers by hand. Hold EXTRA2 2 s to
-jump to a random splice. The reel lives in **SRAM**: power off loses it
+on every clock tick — the reel locks to CHIPMODS's internal tempo or a clock
+patched into CLK IN, and EXTRA1's manual tick re-triggers by hand. Hold EXTRA2
+2 s to jump to a random splice. The reel lives in **SRAM**: power off loses it
 (everything else, including settings, still persists).
 
 To patch audio in, mind the jack's 0–3.3 V window — Eurorack line/CV levels
 are ±5 V, so attenuate and bias (a −5 V offset, or a diode + resistor clamp
-into the pin) rather than feed it straight. The software removes DC and
+into the pin) rather than feed it straight. CHIPMODS's software removes DC and
 clamps, but a hard negative swing below the rail is the one thing it cannot
 digest.
 
 **MARBLE — the random-voltage brain.** V1 and V2 emit **stepped CV** (0–3.3 V
 at whatever level the DAC is parked at — through the recommended 1 kΩ + 10 nF
 output RC these are legitimate control voltages), V3 emits a gate, CLK OUT
-keeps pulsing. The probabilities come from the same Truchets banks the drum
-modes use, so BANK/X/Y navigate a familiar 5×5 morph map: a node's level on a
-step is the chance that stream *fires* on that step. A firing CV stream steps
-a random-walk ladder; non-firing streams **hold** their voltage — the
+keeps pulsing. The probabilities come from the same Truchets banks CHIPDRUM's
+drum modes use, so BANK/X/Y navigate a familiar 5×5 morph map: a node's level
+on a step is the chance that stream *fires* on that step. A firing CV stream
+steps a random-walk ladder; non-firing streams **hold** their voltage — the
 sample-and-hold behavior Marbles is known for. `RES` quantizes the ladder to
 2–16 steps, `ROT` rotates which rung is home, `JUMP` sets the stride
 (1 = scanning, 8 = leaping), `SMOOTH` blends between hard S&H (0 %) and
@@ -120,9 +171,9 @@ re-roll X/Y and the ladders; a tap restarts both ladders at the next bar.
 
 Engine notes: the sampler grew a per-voice steady `hold` level, and the reel
 capture path runs only when a reel mode is active — drum timing, sample
-playback and synth voices are byte-for-byte the code that already shipped.
-The ADC's select+read is now atomic against the audio interrupt, which is
-what makes 25 kHz input sampling safe next to the CV sliders and the analog
+playback and synth voices are byte-for-byte the CHIPDRUM code that already
+shipped. The ADC's select+read is now atomic against the audio interrupt, which
+is what makes 25 kHz input sampling safe next to the CV sliders and the analog
 external-clock reader.
 
 ## Controls
@@ -133,129 +184,10 @@ external-clock reader.
 | LEFT / RIGHT | Change mode / adjust value (hold to repeat, accelerates) | — |
 | EXTRA1 | **Tap**: manual clock tick | Status screen (1.5 s) |
 | EXTRA2 | Restart the bar without stopping — in MORPH: punch REC in/out | Reset mode; hold 2 s for the mode's re-roll: DRUMS/SYNDRUM queue random X/Y for the next bar, MORPH jumps splice, MARBLE re-rolls X/Y + ladders |
-| EXTRA1+EXTRA2 | Save root, octave and gate immediately (mode auto-saves after 1 s) | — |
+| EXTRA1+EXTRA2 | Save root, octave and gate immediately (CHIPMODS auto-saves after 1 s) | — |
 
-## Building
-
-Requires CMake and the Arm GNU toolchain (`arm-none-eabi-gcc`).
-
-```sh
-git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico-sdk
-cd ~/pico-sdk && git submodule update --init --depth 1 lib/tinyusb && cd -
-cmake -S . -B build -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=pico -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j8
-```
-
-> The `tinyusb` submodule is required. Without it the SDK **silently** omits
-> USB support — the build succeeds but the module has no USB serial and can
-> only be re-flashed with the BOOTSEL button.
-
-## Flashing
-
-```sh
-./flash.sh
-```
-
-Builds and flashes the connected Pico. **No BOOTSEL button needed** — the
-script reboots the board into the bootloader for you:
-
-- Already running CHIPDRUM → a **1200-baud touch** on its USB serial port
-  drops it into the bootloader. This is why USB stdio is enabled: a module
-  screwed into a rack can be updated without reaching the PCB.
-- Still running the original CircuitPython firmware → the script unmounts
-  `CIRCUITPY` and reboots the board through the REPL
-  (`microcontroller.on_next_reset(RunMode.UF2)`).
-- Blank or unresponsive board → hold BOOTSEL while plugging in USB, then run
-  the script.
-
-Manual equivalent, once the `RPI-RP2` bootloader volume is mounted:
-
-```sh
-cp build/chipdrum.uf2 /Volumes/RPI-RP2/
-```
-
-⚠️ Copying the `.uf2` onto a **CIRCUITPY** drive does nothing — that drive is
-the Python filesystem, not the bootloader. A UF2 only flashes through
-**RPI-RP2**.
-
-### Coming from the original TECLA firmware
-
-A stock module runs [TECLA-code/CHIPTUNE](https://github.com/TECLA-code/CHIPTUNE):
-**Adafruit CircuitPython 10.0.1** plus a Python program — `main.py` and the
-`core/`, `modes/`, `display/`, `music/` and `lib/` packages — living on the
-`CIRCUITPY` USB drive. The Pico boots the interpreter, the interpreter reads
-`main.py` off that filesystem and runs it, so the module is patched by
-dragging files onto a drive. That firmware gives you nine algorithmic modes
-(Fractal, Riu, Tempesta, Harmonia, Bosc, Escala CV, Euclidia, Cosmos,
-Sequenciador) and sends **USB MIDI** alongside the PWM outputs.
-
-This firmware is a native C rewrite on the same hardware, and the difference
-is more than the language:
-
-- **No Python is loaded.** `chipdrum.uf2` is bare-metal Cortex-M0+ code
-  built against the Pico SDK. There is no interpreter, no import at boot and
-  no `main.py`: the module executes the compiled image directly. Changing
-  behaviour means editing C and reflashing, not editing a file on a drive.
-- **No CIRCUITPY drive.** Flashing overwrites the whole flash — CircuitPython
-  and your Python files with it — and nothing is backed up, so copy the drive
-  somewhere first if it holds edits you care about. Over USB the module then
-  presents a plain serial port (what the 1200-baud reboot uses) and **no USB
-  MIDI device**; this firmware talks to the rack through the jacks only.
-- **Settings live in the last 4 KB flash sector**, written with
-  `flash_safe_execute`, instead of in files on the drive.
-- **The panel is re-purposed.** Here CV1 is GP26, the slider GP28, and the old
-  CV2 jack (GP27) becomes CLK IN. The CircuitPython firmware read GP28 as BPM,
-  GP27 as the mode's second CV and GP26 as the slider.
-- **The timing is different in kind:** a 25 kHz fixed-point audio interrupt
-  and the clock engine on core 0, the OLED on core 1, where the Python build
-  did everything in one interpreted loop.
-
-Nothing is soldered or rewired: same board, same jacks, same OLED. Moving in
-either direction is a UF2 copy.
-
-### Reverting to the original TECLA firmware
-
-1. **Get into the bootloader.** With CHIPDRUM running, a 1200-baud touch on
-   its serial port does it without reaching the PCB:
-
-   ```sh
-   ls /dev/cu.usbmodem*                    # find the module
-   stty -f /dev/cu.usbmodemXXXX 1200
-   ```
-
-   Otherwise hold **BOOTSEL** while plugging in USB. Either way `RPI-RP2`
-   mounts.
-
-2. **Flash CircuitPython.** Download the Raspberry Pi Pico build from
-   [circuitpython.org](https://circuitpython.org/board/raspberry_pi_pico/) —
-   stock modules shipped **10.0.1** — and copy the `.uf2` across:
-
-   ```sh
-   cp ~/Downloads/adafruit-circuitpython-raspberry_pi_pico-en_US-10.0.1.uf2 /Volumes/RPI-RP2/
-   ```
-
-   The board reboots and `CIRCUITPY` appears. At this point it is a bare
-   CircuitPython board with no TECLA code on it — the OLED stays dark.
-
-3. **Copy the TECLA program back.** It lives in the upstream repository (and
-   in this one, on `master`, the last CircuitPython commit before the
-   rewrite):
-
-   ```sh
-   git clone --depth 1 https://github.com/TECLA-code/CHIPTUNE.git /tmp/tecla-orig
-   git -C /tmp/tecla-orig archive HEAD \
-       main.py reset.py settings.toml font5x8.bin core modes display music lib fonts \
-       | tar -x -C /Volumes/CIRCUITPY
-   find /Volumes/CIRCUITPY \( -name '._*' -o -name '.DS_Store' \) -delete
-   ```
-
-   About 500 KB — the same files the module shipped with, minus the macOS
-   metadata the repository carries. Eject the drive
-   (`diskutil eject /Volumes/CIRCUITPY`) and the module restarts on the
-   original firmware.
-
-Coming back to this firmware is just `./flash.sh` again: it finds the
-CIRCUITPY drive and reboots the board into the bootloader itself.
+The layout is CHIPDRUM's; the MORPH and MARBLE entries in the long-press
+column are the only additions.
 
 ## Drums: samples and synthesis
 
@@ -271,7 +203,7 @@ smoothly between adjacent nodes as X/Y move. The pattern topology and node
 tables are adapted from [Truchets](https://github.com/Dylan-Bolink/eurorack/tree/master/marbles)
 and Mutable Instruments Grids under their GPLv3-or-later license.
 
-Everything in the synth runs in fixed point: the Cortex-M0+ has no FPU and
+Everything in CHIPMODS runs in fixed point: the Cortex-M0+ has no FPU and
 software floats cost around 100 cycles apiece, far too slow inside an
 interrupt firing 25,000 times a second.
 
@@ -281,8 +213,8 @@ Preview the synthesized drums on your computer without flashing:
 ./tools/preview_synth.sh     # -> samples/preview_{kick,snare,hat}.wav
 ```
 
-It compiles the real `src/drumsynth.c`, so the WAVs are exactly what the
-module produces.
+It compiles the real `src/drumsynth.c`, so the WAVs are exactly what CHIPMODS
+produces.
 
 DRUMS plays its samples through the PWM outputs. In sample mode a
 voice's PWM slice becomes a DAC: each 8-bit source sample is scaled over 1,250
@@ -330,7 +262,7 @@ The `:ms` suffix caps each sample's length — it matters for hats, where a
 quiet recording's noise floor survives normalising and leaves a tail that
 smears across fast patterns.
 
-The kit is **synthesized rather than sampled**. Every widely circulated
+The default kit is **synthesized rather than sampled**. Every widely circulated
 "TR-909 pack" is an unlicensed rip of Roland hardware, so `tools/gen909.py`
 models the voices instead: the kick is a fast exponential pitch drop into a
 low sine with a click transient, the snare is inharmonic partials plus a noise
@@ -339,9 +271,10 @@ tail, the hat is six inharmonic squares through a high-pass. The result is
 `tools/make_samples.sh`.
 
 Two things worth knowing: the PWM carrier wants an RC filter (1 kΩ + 10 nF)
-per output for a clean reconstruction, and writing settings to flash briefly
-suspends playback. Automatic mode saving is deferred until the menu has been
-still for one second; use EXTRA1+EXTRA2 between phrases for manual saves.
+per output for a clean reconstruction, and CHIPMODS briefly suspends playback
+when writing settings to flash. Automatic mode saving is deferred until the
+menu has been still for one second; use EXTRA1+EXTRA2 between phrases for
+manual saves.
 
 ## Audio quality (the drum output)
 
@@ -350,8 +283,8 @@ sample rate, no conversion, nothing in the path to measure. The drum modes are
 the interesting case, because there the same slice is pressed into service as a
 DAC.
 
-During playback the carrier runs at 100 kHz and the 25 kHz audio interrupt
-writes each sample into the duty register:
+During playback the carrier runs at 100 kHz and CHIPMODS's 25 kHz audio
+interrupt writes each sample into the duty register:
 
 | | |
 |---|---|
@@ -386,14 +319,141 @@ Eurorack input expects; AC-couple it if you are going somewhere else.
 stored samples are unsigned 8-bit, a ~50 dB ceiling, and every 8-bit code still
 lands on its own duty step — so there the kit is the limit, not the hardware.
 Flash is not what holds it there either, since all three kits together are 64 KB
-and the whole firmware occupies 142 KB of the RP2040's 2 MB. A deeper sample
-format is affordable if you want one.
+and the whole CHIPMODS firmware occupies 142 KB of the RP2040's 2 MB. A deeper
+sample format is affordable if you want one.
 
 In round numbers: **roughly 10-bit audio in a 12.5 kHz band** — a little finer
 than the 8-bit drum machines of the early eighties, and close to an SP-1200 in
 bandwidth. The grain is a characteristic of the format, not a defect in it.
 
-## Web updater (build & flash from the browser)
+## Building CHIPMODS
+
+Requires CMake and the Arm GNU toolchain (`arm-none-eabi-gcc`).
+
+```sh
+git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico-sdk
+cd ~/pico-sdk && git submodule update --init --depth 1 lib/tinyusb && cd -
+cmake -S . -B build -DPICO_SDK_PATH=$HOME/pico-sdk -DPICO_BOARD=pico -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j8
+```
+
+> The `tinyusb` submodule is required. Without it the SDK **silently** omits
+> USB support — the build succeeds but CHIPMODS has no USB serial and can
+> only be re-flashed with the BOOTSEL button.
+
+The output is `build/chipdrum.uf2` — the image keeps CHIPDRUM's artifact name
+for compatibility with the flashing scripts; it runs CHIPMODS.
+
+## Flashing CHIPMODS
+
+```sh
+./flash.sh
+```
+
+Builds and flashes the connected Pico. **No BOOTSEL button needed** — the
+script reboots the board into the bootloader for you:
+
+- Already running CHIPMODS or CHIPDRUM → a **1200-baud touch** on the module's
+  USB serial port drops it into the bootloader. This is why CHIPDRUM enabled
+  USB stdio and CHIPMODS keeps it: a module screwed into a rack can be updated
+  without reaching the PCB.
+- Still running the original CircuitPython firmware → the script unmounts
+  `CIRCUITPY` and reboots the board through the REPL
+  (`microcontroller.on_next_reset(RunMode.UF2)`).
+- Blank or unresponsive board → hold BOOTSEL while plugging in USB, then run
+  the script.
+
+Manual equivalent, once the `RPI-RP2` bootloader volume is mounted:
+
+```sh
+cp build/chipdrum.uf2 /Volumes/RPI-RP2/
+```
+
+⚠️ Copying the `.uf2` onto a **CIRCUITPY** drive does nothing — that drive is
+the Python filesystem, not the bootloader. A UF2 only flashes through
+**RPI-RP2**.
+
+### Coming from the original TECLA firmware
+
+A stock module runs [TECLA-code/CHIPTUNE](https://github.com/TECLA-code/CHIPTUNE):
+**Adafruit CircuitPython 10.0.1** plus a Python program — `main.py` and the
+`core/`, `modes/`, `display/`, `music/` and `lib/` packages — living on the
+`CIRCUITPY` USB drive. The Pico boots the interpreter, the interpreter reads
+`main.py` off that filesystem and runs it, so the module is patched by
+dragging files onto a drive. That firmware gives you nine algorithmic modes
+(Fractal, Riu, Tempesta, Harmonia, Bosc, Escala CV, Euclidia, Cosmos,
+Sequenciador) and sends **USB MIDI** alongside the PWM outputs.
+
+CHIPMODS (like CHIPDRUM before it) is a native C rewrite on the same hardware,
+and the difference is more than the language:
+
+- **No Python is loaded.** `chipdrum.uf2` is bare-metal Cortex-M0+ code
+  built against the Pico SDK. There is no interpreter, no import at boot and
+  no `main.py`: the module executes the compiled image directly. Changing
+  behaviour means editing C and reflashing, not editing a file on a drive.
+- **No CIRCUITPY drive.** Flashing overwrites the whole flash — CircuitPython
+  and your Python files with it — and nothing is backed up, so copy the drive
+  somewhere first if it holds edits you care about. Over USB the module then
+  presents a plain serial port (what the 1200-baud reboot uses) and **no USB
+  MIDI device**; CHIPMODS talks to the rack through the jacks only.
+- **Settings live in the last 4 KB flash sector**, written with
+  `flash_safe_execute`, instead of in files on the drive.
+- **The panel is re-purposed.** Under CHIPDRUM and CHIPMODS, CV1 is GP26, the
+  slider GP28, and the old CV2 jack (GP27) becomes CLK IN. The CircuitPython
+  firmware read GP28 as BPM, GP27 as the mode's second CV and GP26 as the
+  slider.
+- **The timing is different in kind:** a 25 kHz fixed-point audio interrupt
+  and the clock engine on core 0, the OLED on core 1, where the Python build
+  did everything in one interpreted loop.
+
+Nothing is soldered or rewired: same board, same jacks, same OLED. Moving in
+either direction is a UF2 copy.
+
+### Reverting to the original TECLA firmware
+
+1. **Get into the bootloader.** With CHIPMODS (or CHIPDRUM) running, a
+   1200-baud touch on its serial port does it without reaching the PCB:
+
+   ```sh
+   ls /dev/cu.usbmodem*                    # find the module
+   stty -f /dev/cu.usbmodemXXXX 1200
+   ```
+
+   Otherwise hold **BOOTSEL** while plugging in USB. Either way `RPI-RP2`
+   mounts.
+
+2. **Flash CircuitPython.** Download the Raspberry Pi Pico build from
+   [circuitpython.org](https://circuitpython.org/board/raspberry_pi_pico/) —
+   stock modules shipped **10.0.1** — and copy the `.uf2` across:
+
+   ```sh
+   cp ~/Downloads/adafruit-circuitpython-raspberry_pi_pico-en_US-10.0.1.uf2 /Volumes/RPI-RP2/
+   ```
+
+   The board reboots and `CIRCUITPY` appears. At this point it is a bare
+   CircuitPython board with no TECLA code on it — the OLED stays dark.
+
+3. **Copy the TECLA program back.** It lives in the upstream repository (and
+   in this one, on `master`, the last CircuitPython commit before CHIPDRUM's
+   rewrite):
+
+   ```sh
+   git clone --depth 1 https://github.com/TECLA-code/CHIPTUNE.git /tmp/tecla-orig
+   git -C /tmp/tecla-orig archive HEAD \
+       main.py reset.py settings.toml font5x8.bin core modes display music lib fonts \
+       | tar -x -C /Volumes/CIRCUITPY
+   find /Volumes/CIRCUITPY \( -name '._*' -o -name '.DS_Store' \) -delete
+   ```
+
+   About 500 KB — the same files the module shipped with, minus the macOS
+   metadata the repository carries. Eject the drive
+   (`diskutil eject /Volumes/CIRCUITPY`) and the module restarts on the
+   original firmware.
+
+Coming back to CHIPMODS is just `./flash.sh` again: it finds the CIRCUITPY
+drive and reboots the board into the bootloader itself.
+
+## Web updater (build & flash CHIPMODS from the browser)
 
 ```sh
 ./web/update.sh          # starts a local server and opens the browser
@@ -406,7 +466,7 @@ A dark-panel page at `http://127.0.0.1:8123` where you:
   shallow-clones the branch, runs cmake against your Pico SDK and writes the
   resulting `.uf2` to the module over USB, reusing the same button-free
   bootloader reboot as `flash.sh`;
-- keep a library of past builds under `web/firmware/` and **flash an
+- keep a library of past CHIPMODS builds under `web/firmware/` and **flash an
   installed firmware without rebuilding**;
 - watch live LEDs for *module on USB / bootloader ready / CircuitPython* and
   a streaming build log.
@@ -415,15 +475,16 @@ It is a local helper, not a site: browsers cannot write to the RP2040
 bootloader disk, so `serve.py` does that part for the page. Stdlib only,
 binds to 127.0.0.1, branch names are regex-whitelisted before touching git.
 Env knobs: `CHIPGENE_REPO`, `PICO_SDK_PATH`, `CHIPGENE_WEBPORT`,
-`CHIPGENE_NOOPEN=1` (no browser pop-up, for scripting).
+`CHIPGENE_NOOPEN=1` (no browser pop-up, for scripting). The `CHIPGENE_*`
+prefix is the updater's original name, kept unchanged in `web/serve.py`.
 
 ## Tests
 
-The musical algorithms (Truchets banks and X/Y morphing, Turing register,
-clock math, PWM pitch range, clock-input detection and drum
-synthesis) can be checked on
-your Mac without any hardware — the test compiles the real firmware sources,
-so it cannot drift from what the module plays:
+CHIPMODS's musical algorithms (CHIPDRUM's Truchets banks and X/Y morphing,
+Turing register, clock math, PWM pitch range, clock-input detection and drum
+synthesis, plus the new reel and CV-brain math) can be checked on your Mac
+without any hardware — the test compiles the real firmware sources, so it
+cannot drift from what the module plays:
 
 ```sh
 ./test/run.sh
@@ -434,26 +495,6 @@ that the clock input triggers on everything from 3.3 V
 logic down to a 0.4 V attenuated gate while ignoring noise; and that every
 synth drum is loud, decays to silence and releases its voice at all TUNE and
 DECAY extremes — a stuck voice would drone forever on an output jack.
-
-## Acknowledgements
-
-- **Hardware: [TECLA](https://www.instagram.com/tecla.cat/)** — the CHIPTUNE
-  module, its PCB, panel and enclosure are TECLA's design and build. This
-  firmware exists because that hardware exists; none of it is modified here.
-  Find the modules and what else they make at
-  [@tecla.cat](https://www.instagram.com/tecla.cat/).
-- **Original firmware: [TECLA-code/CHIPTUNE](https://github.com/TECLA-code/CHIPTUNE)**
-  — the CircuitPython program the module ships with, and the reference for the
-  pin map and hardware behaviour this rewrite had to match. See
-  [Coming from the original TECLA firmware](#coming-from-the-original-tecla-firmware)
-  for the differences, and [Reverting](#reverting-to-the-original-tecla-firmware)
-  to put it back.
-- **Pattern banks: [Truchets](https://github.com/Dylan-Bolink/eurorack/tree/master/marbles)
-  and Mutable Instruments Grids** — the drum pattern topology and node tables
-  are adapted from them, under their GPLv3-or-later license.
-
-CHIPDRUM is an independent, unofficial firmware. It is not affiliated with or
-endorsed by TECLA.
 
 ## Architecture
 
@@ -469,6 +510,31 @@ endorsed by TECLA.
 - Settings persist in the last 4 KB flash sector (`flash_safe_execute`,
   saved only on the button combo to avoid wear).
 
-Adding a mode: create `src/modes/mode_x.c` implementing a `mode_t`
+This skeleton is CHIPDRUM's, inherited unchanged. Adding a mode: create
+`src/modes/mode_x.c` implementing a `mode_t`
 (`reset` / `on_tick` / optional `update` / `draw` + params), add it to
 `MODES[]` in `src/modes/modes.c` and to `CMakeLists.txt`.
+
+## Acknowledgements
+
+- **Firmware lineage: CHIPDRUM** — CHIPMODS is a fork and extension of
+  CHIPDRUM. The audio engine, the six original modes, the drum synthesis and
+  the flashing flow are CHIPDRUM's work; CHIPMODS adds MORPH, MARBLE and the
+  web updater on top.
+- **Hardware: [TECLA](https://www.instagram.com/tecla.cat/)** — the CHIPTUNE
+  module, its PCB, panel and enclosure are TECLA's design and build. CHIPDRUM
+  — and therefore CHIPMODS — exists because that hardware exists; none of it
+  is modified here. Find the modules and what else they make at
+  [@tecla.cat](https://www.instagram.com/tecla.cat/).
+- **Original firmware: [TECLA-code/CHIPTUNE](https://github.com/TECLA-code/CHIPTUNE)**
+  — the CircuitPython program the module ships with, and the reference for the
+  pin map and hardware behaviour CHIPDRUM had to match. See
+  [Coming from the original TECLA firmware](#coming-from-the-original-tecla-firmware)
+  for the differences, and [Reverting](#reverting-to-the-original-tecla-firmware)
+  to put it back.
+- **Pattern banks: [Truchets](https://github.com/Dylan-Bolink/eurorack/tree/master/marbles)
+  and Mutable Instruments Grids** — the drum pattern topology and node tables
+  are adapted from them, under their GPLv3-or-later license.
+
+CHIPMODS is an independent, unofficial extension of CHIPDRUM. It is not
+affiliated with or endorsed by TECLA.
