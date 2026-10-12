@@ -188,7 +188,7 @@ static void draw(void) {
         if (glow_gate) glow_gate--;
     }
 
-    char buf[24];
+    char buf[48];
     sprintf(buf, "%s X%d Y%d", truchet_bank_name(p_bank), p_x / 5, p_y / 5);
     gfx_text(0, 40, buf, 1);
     sprintf(buf, "A%d/%d B%d  ch%d%%", (tgt[0] * (p_res - 1) + 127) / 255 + 1,

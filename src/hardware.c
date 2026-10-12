@@ -7,6 +7,18 @@
 
 #include "config.h"
 
+// The SAR ADC needs a short settling delay after switching the input mux,
+// or the first conversion after a channel change can read a stale value.
+// The audio ISR steals the ADC for reel capture between our reads, so every
+// main-loop read follows a channel switch.
+static void adc_read_settled(uint chan, uint16_t *out) {
+    uint32_t irq = save_and_disable_interrupts();
+    adc_select_input(chan);
+    busy_wait_us_32(1);
+    *out = adc_read();
+    restore_interrupts(irq);
+}
+
 static const uint8_t BTN_PINS[NUM_BUTTONS] = {PIN_BTN_UP,     PIN_BTN_DOWN,
                                               PIN_BTN_LEFT,   PIN_BTN_RIGHT,
                                               PIN_BTN_EXTRA1, PIN_BTN_EXTRA2};
@@ -60,17 +72,13 @@ uint16_t adc_read_cv1(void) {
     // The audio ISR may steal the ADC for live-reel capture. The
     // select+read pair must be atomic or the ISR can switch the channel
     // between our select and our read and we return the wrong jack.
-    uint32_t irq = save_and_disable_interrupts();
-    adc_select_input(ADC_CV1);
-    uint16_t v = adc_read();
-    restore_interrupts(irq);
+    uint16_t v;
+    adc_read_settled(ADC_CV1, &v);
     return v;
 }
 
 uint16_t adc_read_slider(void) {
-    uint32_t irq = save_and_disable_interrupts();
-    adc_select_input(ADC_SLIDER);
-    uint16_t v = adc_read();
-    restore_interrupts(irq);
+    uint16_t v;
+    adc_read_settled(ADC_SLIDER, &v);
     return v;
 }

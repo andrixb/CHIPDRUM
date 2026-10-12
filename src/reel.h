@@ -1,5 +1,5 @@
 // =============================================================================
-// REEL - live-recorded loop buffer + 3 gene playback heads (CHIPGENE/MORPH)
+// REEL - live-recorded loop buffer + 3 gene playback heads (CHIPMODS/MORPH)
 // =============================================================================
 // Least-risky design notes:
 // - Fixed static buffer, no malloc, no flash writes. Reel lives in SRAM only.
@@ -33,10 +33,12 @@ void reel_set_sos_pct(int pct);    // 0..100 Sound-On-Sound overdub amount
 void reel_capture_sample(uint16_t adc12); // one 12-bit ADC read, 0..4095
 
 // --- playback heads (configured from mode on_tick/update, main loop) ---
-// step_q16: signed 16.16 increment, (1<<16) = 1x forward, negative = reverse.
+// The head position is 17.15: enough integer bits for the whole reel (75000)
+// plus a 15-bit fraction. step_q15: signed 17.15 increment, (1<<15) = 1x
+// forward, negative = reverse.
 // gain_q8: 0..256 amplitude.
 void reel_head_setup(int head, uint32_t start, uint32_t len,
-                     int32_t step_q16, uint16_t gain_q8);
+                     int32_t step_q15, uint16_t gain_q8);
 void reel_head_gain(int head, uint16_t gain_q8);
 void reel_head_retrigger(int head, uint32_t start);
 

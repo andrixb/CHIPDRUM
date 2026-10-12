@@ -43,9 +43,11 @@ static uint64_t clk_decay_at = 0;
 
 static void clk_poll(uint64_t now) {
     // Atomic for the same reason as hardware.c: the reel ISR also uses the
-    // ADC, and must not interleave between our select and read.
+    // ADC, and must not interleave between our select and read. The 1 us
+    // settle covers the mux switch (see adc_read_settled in hardware.c).
     uint32_t irq = save_and_disable_interrupts();
     adc_select_input(ADC_CLK_IN);
+    busy_wait_us_32(1);
     uint16_t v = adc_read();
     restore_interrupts(irq);
     clk_now = v;
@@ -176,10 +178,14 @@ int clock_task(uint64_t now, float slider_norm) {
     }
     was_external = external;
 
-    if (manual_pending) {
-        fire += manual_pending;
-        manual_pending = 0;
+    // Manual ticks share the same per-call budget: a stalled loop must not
+    // let a burst of queued ticks overtire the modes or smear one clock-out
+    // pulse over what should have been several.
+    while (manual_pending && fire < 4) {
+        fire++;
+        manual_pending--;
     }
+    manual_pending = 0; // leftover presses during a stall are dropped
 
     if (fire > 0) pulse_out(now);
     return fire;

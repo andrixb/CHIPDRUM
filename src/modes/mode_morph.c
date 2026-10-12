@@ -47,9 +47,9 @@ static const param_t PARAMS[] = {
 static int32_t speed_to_step(int16_t st, bool *rev) {
     int mag = (st < 0) ? -st : st;
     float rate = powf(2.0f, mag / 12.0f);
-    int32_t step = (int32_t)(rate * 65536.0f);
-    if (step < 4096) step = 4096;
-    if (step > (16 << 16)) step = (16 << 16);
+    int32_t step = (int32_t)(rate * 32768.0f); // reel head position is 17.15
+    if (step < 2048) step = 2048;
+    if (step > (16 << 15)) step = (16 << 15);
     *rev = (st < 0);
     return *rev ? -step : step;
 }
@@ -122,18 +122,17 @@ static void randomize(int16_t *x, int16_t *y) {
 }
 
 static void draw(void) {
-    // Waveform overview, decimated to 128 px (reads only; tearing cosmetic).
+    // Waveform overview, decimated to 64 columns of mirrored vertical bars
+    // around the centre line at y=32. Reads only; tearing is cosmetic.
     for (int x = 0; x < 128; x += 2) {
         uint32_t idx = ((uint32_t)x * reel_length()) / 128u;
-        uint8_t s = reel_peek(idx);
-        int h = ((int)s - 128) * 20 / 128; // +/-10 px
-        int y0 = 32 - h;
-        int y1 = 32 + (h < 0 ? -h : 0);
-        if (y0 < 12) y0 = 12;
-        if (y1 > 50) y1 = 50;
-        gfx_pixel(x, 32 + ((int)s - 128) * 20 / 128, 1);
-        (void)y0;
-        (void)y1;
+        int h = ((int)reel_peek(idx) - 128) * 20 / 128; // +/-10 px
+        if (h == 0) {
+            gfx_pixel(x, 32, 1);
+            continue;
+        }
+        for (int y = 32 - (h < 0 ? 0 : h); y <= 32 + (h < 0 ? -h : 0); y++)
+            gfx_pixel(x, y, 1);
     }
     // Splice ticks.
     for (int i = 0; i < 8; i++) {

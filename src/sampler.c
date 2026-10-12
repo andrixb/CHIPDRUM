@@ -7,6 +7,7 @@
 #include "hardware/pwm.h"
 #include "hardware/sync.h"
 #include "hardware/timer.h"
+#include "pico/time.h"
 
 #include "config.h"
 #include "drumsynth.h"
@@ -60,6 +61,7 @@ static void __not_in_flash_func(alarm_isr)(void) {
     // their channel selection mid-sequence.
     if (reel_active() && reel_recording()) {
         adc_select_input(ADC_CV1);
+        busy_wait_us_32(1); // mux settle: the main loop may have switched
         reel_capture_sample(adc_read());
     }
 
@@ -122,8 +124,8 @@ void sampler_enable(int voice, bool on) {
     s->playing = false;
     s->hold = -1;
     if (!on) s->synth = false;
+    voice_set_sample_mode(voice, on); // stop voice_update touching the slice
     if (on) {
-        voice_set_sample_mode(voice, true); // stop voice_update touching it
         // 8-bit DAC locked to the sample clock (see AUDIO_SR in config.h)
         pwm_set_enabled(s->slice, false);
         pwm_set_clkdiv(s->slice, 1.0f);
@@ -131,7 +133,6 @@ void sampler_enable(int voice, bool on) {
         pwm_set_chan_level(s->slice, s->chan, DAC_FROM_PCM8(128));
         pwm_set_enabled(s->slice, true);
     }
-    voice_set_sample_mode(voice, on); // also hands the slice back when off
 }
 
 bool sampler_enabled(int voice) { return sp[voice].active; }

@@ -1,4 +1,4 @@
-// Host-side test of the pure algorithmic parts of the CHIPDRUM firmware.
+// Host-side test of the pure algorithmic parts of the CHIPMODS firmware.
 // Compiles the real header logic natively (no Pico SDK involved).
 #include <math.h>
 #include <stdint.h>
@@ -33,6 +33,9 @@ static float rng_f(void) { return (rng_u32() >> 8) * (1.0f / 16777216.0f); }
 
 // ---- MARBLE mode helpers (src/marble.h) ----
 #include "../src/marble.h"
+
+// ---- REEL helpers (src/reel.h + src/reel.c) ----
+#include "../src/reel.h"
 
 static int pcm_peak(const uint8_t *pcm, int len) {
     int peak = 0;
@@ -624,6 +627,60 @@ int main(void) {
               marble_cv_u8(9, -1) == marble_cv_u8(9, 8), "wrap broken");
         check("marble_cv clamps tiny RES", marble_cv_u8(1, 3) <= 255, "");
     }
+
+    printf("\n== REEL overdub / interpolation / window math (src/reel.c) ==\n");
+    {
+        check("SOS 100% replaces the old sample",
+              reel_mix_signed(50, -20, 256) == -20, "replace failed");
+        check("SOS 0% keeps the old sample",
+              reel_mix_signed(50, -20, 0) == 50, "keep failed");
+        check("SOS 50% is the midpoint",
+              reel_mix_signed(0, 100, 128) == 50, "midpoint wrong");
+        check("overdub clamps to signed 8-bit",
+              reel_mix_signed(127, 127, 256) <= 127 &&
+              reel_mix_signed(-128, -128, 256) >= -128, "clamp broken");
+        check("interp endpoints",
+              reel_interp_u8(10, 200, 0) == 10 &&
+              reel_interp_u8(10, 200, 0xFFFF) >= 199, // truncating Q16: within 1
+              "endpoints wrong");
+        check("interp midpoint is between", reel_interp_u8(0, 254, 0x8000) == 127,
+              "midpoint wrong");
+        check("splice windows tile the reel exactly",
+              reel_splice_start(0) == 0 &&
+              reel_splice_start(REEL_NSPLICE - 1) + reel_splice_len(0) <=
+                  reel_length(),
+              "window past end");
+    }
+    {
+        // Feed a ramp into a fresh reel and read the window back at 1x:
+        // head position must stay inside the window across many wraps.
+        reel_reset();
+        reel_enable(true);
+        reel_set_rec(true);
+        for (uint32_t i = 0; i < 1000; i++)
+            reel_capture_sample((uint16_t)(128 + (int)(i % 100) - 50));
+        reel_set_rec(false);
+        uint32_t start = reel_splice_start(0), len = reel_splice_len(0);
+        // The position read after a render may sit one step past an edge -
+        // the next render folds it back - so the window is inclusive here.
+        int inside = 1;
+        reel_head_setup(0, start, 200, 1 << 15, 256);
+        for (int n = 0; n < 5000; n++) {
+            if (reel_render_level(0) > DAC_WRAP) inside = 0;
+            uint32_t p = reel_head_pos(0);
+            if (p < start || p > start + 200) inside = 0;
+        }
+        check("forward head stays in its window", inside, "position escaped");
+        reel_head_setup(0, start, 200, -(1 << 15), 256);
+        inside = 1;
+        for (int n = 0; n < 5000; n++) {
+            if (reel_render_level(0) > DAC_WRAP) inside = 0;
+            uint32_t p = reel_head_pos(0);
+            if (p + 1 < start || p > start + 200) inside = 0;
+        }
+        check("reverse head stays in its window", inside, "position escaped");
+    }
+    reel_enable(false);
 
     printf("\n%s\n", fails ? "FAILURES PRESENT" : "ALL HOST TESTS PASSED");
     return fails ? 1 : 0;

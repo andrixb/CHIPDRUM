@@ -1,14 +1,13 @@
 #include "gfx.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "font5x8.h"
 
 uint8_t gfx_fb[OLED_FB_SIZE];
 
-void gfx_clear(void) {
-    for (int i = 0; i < OLED_FB_SIZE; i++) gfx_fb[i] = 0;
-}
+void gfx_clear(void) { memset(gfx_fb, 0, sizeof(gfx_fb)); }
 
 void gfx_pixel(int x, int y, int on) {
     if (x < 0 || x >= OLED_W || y < 0 || y >= OLED_H) return;

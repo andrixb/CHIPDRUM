@@ -134,7 +134,7 @@ void voice_set_sample_mode(int v, bool on) {
     sample_mode[v] = on;
     if (on) return;
     // restore square-oscillator operation: the sampler left the slice at
-    // clkdiv 1 / wrap 255
+    // clkdiv 1 / DAC_WRAP
     voice_t *vc = &voices[v];
     vc->gate = false;
     vc->sweep = false;

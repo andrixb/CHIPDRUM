@@ -70,7 +70,7 @@ uint8_t truchet_level(int bank, int x, int y, int instrument, int step) {
     x = clamp_pct(x);
     y = clamp_pct(y);
     int family = bank;
-    // Grids stores 32 internal subdivisions per bar, while CHIPDRUM receives
+    // Grids stores 32 internal subdivisions per bar, while CHIPMODS receives
     // one clock per 16th note. Sample every other map point and repeat it
     // across two bars: the display and fill phrase stay 32 steps long without
     // halving the audible tempo.

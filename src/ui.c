@@ -7,6 +7,7 @@
 #include "pico/time.h"
 
 #include "clockgen.h"
+#include "config.h"
 #include "gfx.h"
 #include "mode.h"
 #include "scales.h"
@@ -71,7 +72,7 @@ static void draw_param_line(void) {
 }
 
 static void draw_summary(const mode_t *m) {
-    char buf[24], nn[8];
+    char buf[40], nn[8];
     gfx_text(28, 0, "= STATUS =", 1);
     sprintf(buf, "Mode: %s", m->name);
     gfx_text(0, 12, buf, 1);
@@ -99,9 +100,9 @@ static void draw_summary(const mode_t *m) {
 
 static void draw_splash(void) {
     gfx_clear();
-    draw_centered("CHIPDRUM", 14, 2);
-    draw_centered("DRUM ENGINE", 34, 1);
-    draw_centered("v3.0", 48, 1);
+    draw_centered(FW_NAME, 14, 2);
+    draw_centered(FW_SUBTITLE, 34, 1);
+    draw_centered(FW_VERSION, 48, 1);
     gfx_show();
     sleep_ms(900);
 }

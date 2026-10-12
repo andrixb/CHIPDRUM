@@ -1,7 +1,14 @@
 // =============================================================================
-// CHIPDRUM - hardware configuration
+// CHIPMODS - hardware configuration
 // =============================================================================
 #pragma once
+
+// Product name and version, used by the serial banner and the splash screen.
+// The build artifact keeps CHIPDRUM's historical name (chipdrum.uf2); this is
+// the name the firmware shows on screen and over USB.
+#define FW_NAME "CHIPMODS"
+#define FW_SUBTITLE "8 VOICE ENGINE"
+#define FW_VERSION "3.1"
 
 // --- PWM oscillator outputs (square-wave voices) ---
 #define PIN_VOICE1 22 // bass          (PWM slice 3, channel A)

@@ -1,5 +1,5 @@
 // =============================================================================
-// CHIPDRUM - global state shared between cores
+// CHIPMODS - global state shared between cores
 // =============================================================================
 #pragma once
 #include <stdbool.h>

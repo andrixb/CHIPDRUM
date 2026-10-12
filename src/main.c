@@ -1,16 +1,18 @@
 // =============================================================================
-// CHIPDRUM - generative drum, bass & drone voice for Eurorack
+// CHIPMODS - generative drum, bass, drone & reel voices for Eurorack
+// (extends CHIPDRUM: same engine, plus the MORPH and MARBLE reel modes)
 // Raspberry Pi Pico (RP2040), Pico SDK
 //
 // Outputs: 3 PWM square-wave oscillators (GP22 bass, GP2 sub, GP0 accent)
 //          master clock out on GP1
-// Inputs:  external clock on GP27 (GPIO IRQ), CV1 on GP26, tempo slider GP28
+// Inputs:  external clock on GP27 (read as analog), CV1 on GP26, slider GP28
 // Core 0:  clock engine, modes, voices, buttons (tight timing)
 // Core 1:  OLED rendering
 // =============================================================================
 #include <stdio.h>
 #include <string.h>
 
+#include "hardware/watchdog.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 
@@ -81,7 +83,13 @@ int main(void) {
     MODES[g.mode_idx]->reset();
     multicore_launch_core1(ui_core1_entry);
     led_startup_animation();
-    printf("CHIPDRUM ready, mode %s\n", MODES[g.mode_idx]->name);
+    printf(FW_NAME " ready, mode %s\n", MODES[g.mode_idx]->name);
+
+    // A hung main loop in a rack module should recover on its own: the
+    // watchdog resets the Pico if core 0 stops feeding it. Enabled only once
+    // everything is up, and paused automatically while a debug probe holds
+    // the cores. Settings saves use flash_safe_execute (~ms), far inside 2 s.
+    watchdog_enable(2000, false);
 
     uint64_t last_us = time_us_64();
     uint64_t t_buttons = 0, t_adc = 0;
@@ -90,6 +98,7 @@ int main(void) {
         uint64_t now = time_us_64();
         float dt = (now - last_us) * 1e-6f;
         last_us = now;
+        watchdog_update();
 
         // --- analog inputs, smoothed (every 1 ms) ---
         if (now - t_adc > 1000) {
@@ -136,7 +145,7 @@ int main(void) {
             case ACT_RANDOMIZE:
                 if (mode->randomize) {
                     int16_t x, y;
-                    char xy[12];
+                    char xy[24];
                     mode->randomize(&x, &y);
                     snprintf(xy, sizeof(xy), "%d/%d", x, y);
                     toast("RAND X/Y", xy, 1100);

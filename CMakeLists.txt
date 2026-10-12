@@ -15,6 +15,7 @@ add_executable(chipdrum
     src/voice.c
     src/sampler.c
     src/reel.c
+    src/drum_seq.c
     src/drumsynth.c
     src/truchet_patterns.c
     src/clockgen.c
@@ -48,7 +49,11 @@ target_link_libraries(chipdrum
     hardware_adc
     hardware_i2c
     hardware_flash
+    hardware_watchdog
 )
+
+# The host test build already uses these; hold the firmware to the same bar.
+target_compile_options(chipdrum PRIVATE -Wall -Wextra)
 
 # USB serial: gives debug printf AND lets picotool reboot the module into the
 # bootloader remotely ("picotool reboot -f -u"), so updating it in a rack does

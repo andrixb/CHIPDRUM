@@ -1,11 +1,26 @@
 // =============================================================================
-// REEL - live-recorded loop buffer + 3 gene playback heads
+// REEL - live-recorded loop buffer + 3 gene playback heads (CHIPMODS/MORPH)
 // =============================================================================
 #include "reel.h"
 
 #include <string.h>
 
 #include "config.h"
+
+// Head positions are 17.15 (see reel.h): REEL_LEN is 75000 samples, which
+// overflows the integer field of a 16.16 position past index 32768.
+#define HEAD_ONE (1 << 15)
+
+// reel.c is also compiled on the host (unit tests), where there is no
+// interrupt controller: the critical sections degrade to no-ops.
+#ifdef PICO_NO_HARDWARE
+static inline uint32_t reel_irq_save(void) { return 0u; }
+static inline void reel_irq_restore(uint32_t flags) { (void)flags; }
+#else
+#include "hardware/sync.h"
+static inline uint32_t reel_irq_save(void) { return save_and_disable_interrupts(); }
+static inline void reel_irq_restore(uint32_t flags) { restore_interrupts(flags); }
+#endif
 
 static uint8_t s_reel[REEL_LEN]; // .bss, silence = 128
 
@@ -20,8 +35,9 @@ static int32_t s_lp[REEL_NHEADS] = {0, 0, 0}; // per-head tilt state (signed)
 static uint16_t s_hold_ctr[REEL_NHEADS] = {0, 0, 0};
 
 typedef struct {
-    uint32_t pos;   // 16.16 position (integer part = sample index space)
-    int32_t step;   // 16.16 signed increment
+    uint32_t pos;   // 17.15 position: 17 bits of sample index (up to 131071,
+                    // enough for the whole 75000-sample reel), 15 of fraction
+    int32_t step;   // 17.15 signed increment; (1<<15) = native speed
     uint32_t start; // loop window, sample indices
     uint32_t len;
     uint16_t gain;  // 0..256
@@ -61,7 +77,7 @@ void reel_reset(void) {
         s_head[i].start = 0;
         s_head[i].len = REEL_LEN;
         s_head[i].pos = 0;
-        s_head[i].step = 65536;
+        s_head[i].step = HEAD_ONE;
         s_head[i].gain = (i == 0) ? 256 : 0;
         s_head[i].active = true;
     }
@@ -90,7 +106,7 @@ void reel_set_fx(int fx, int amt_pct) {
 
 void reel_capture_sample(uint16_t adc12) {
     if (!s_enabled || !s_rec) return;
-    if (adc12 > 4095) adc12 = 4095;
+    // adc_read() returns 12-bit values, so adc12 is already in 0..4095.
     // Track input bias slowly (~40 ms time constant at 25 kHz).
     s_dc += ((int32_t)adc12 - s_dc) >> 10;
     int32_t c = (int32_t)adc12 - s_dc; // signed signal around 0
@@ -109,21 +125,27 @@ void reel_capture_sample(uint16_t adc12) {
 }
 
 void reel_head_setup(int head, uint32_t start, uint32_t len,
-                     int32_t step_q16, uint16_t gain_q8) {
+                     int32_t step_q15, uint16_t gain_q8) {
     if (head < 0 || head >= REEL_NHEADS) return;
     if (len < 64) len = 64;
     if (start >= REEL_LEN) start = 0;
     if (start + len > REEL_LEN) len = REEL_LEN - start;
     if (gain_q8 > 256) gain_q8 = 256;
     head_t *h = &s_head[head];
+    // The audio ISR renders from these fields continuously. An update seen
+    // half-written could pair a new start with an old len and index outside
+    // the buffer, so the whole window update must be atomic - same reason
+    // sampler_trigger() disables interrupts.
+    uint32_t irq = reel_irq_save();
     h->start = start;
     h->len = len;
-    h->step = step_q16;
+    h->step = step_q15;
     h->gain = gain_q8;
     h->active = true;
     // Park at window start (forward) or end (reverse) so the next ISR tick
     // plays from the splice edge, not mid-gene.
-    h->pos = (step_q16 >= 0) ? (start << 16) : ((start + len - 1) << 16);
+    h->pos = (step_q15 >= 0) ? (start << 15) : ((start + len - 1) << 15);
+    reel_irq_restore(irq);
     s_lp[head] = 0;
     s_hold_ctr[head] = 0;
 }
@@ -139,29 +161,38 @@ void reel_head_retrigger(int head, uint32_t start) {
     head_t *h = &s_head[head];
     if (start >= REEL_LEN) start = 0;
     if (start + h->len > REEL_LEN) start = REEL_LEN - h->len;
-    h->pos = (h->step >= 0) ? (start << 16) : ((start + h->len - 1) << 16);
+    h->pos = (h->step >= 0) ? (start << 15) : ((start + h->len - 1) << 15);
+}
+
+// Fold a head's raw position into its loop window. Used by the render (to
+// pick the sample) and by reel_head_pos (so the UI never shows an index
+// outside the window in the 40 us between renders).
+static uint32_t fold_idx(const head_t *h) {
+    uint32_t idx = h->pos >> 15;
+    if (idx < h->start || idx >= h->start + h->len) {
+        uint32_t rel;
+        if (h->step >= 0)
+            rel = (idx >= h->start) ? (idx - h->start) % h->len : 0;
+        else
+            rel = h->len - 1;
+        idx = h->start + rel;
+    }
+    return idx;
 }
 
 uint16_t reel_render_level(int head) {
     head_t *h = &s_head[head];
     // Window wrap (cheap branch version; len >= 64 always).
-    uint32_t idx = h->pos >> 16;
-    if (idx < h->start || idx >= h->start + h->len) {
-        // Wrapped past an edge: fold back into the window.
-        uint32_t rel;
-        if (h->step >= 0) {
-            rel = (idx >= h->start) ? (idx - h->start) % h->len : 0;
-        } else {
-            rel = h->len - 1;
-        }
-        idx = h->start + rel;
-        h->pos = idx << 16;
-    }
+    uint32_t idx = fold_idx(h);
+    h->pos = (idx << 15) | (h->pos & 0x7FFFu);
     uint32_t idx2 = idx + 1;
     if (idx2 >= h->start + h->len) idx2 = h->start;
-    uint16_t frac = (uint16_t)(h->pos & 0xFFFFu);
+    uint16_t frac = (uint16_t)((h->pos & 0x7FFFu) << 1); // -> Q16 for interp
     uint8_t s = reel_interp_u8(s_reel[idx], s_reel[idx2], frac);
-    h->pos = (uint32_t)((int32_t)h->pos + h->step);
+    // Modular 32-bit add: (uint32_t)step is two's-complement for a negative
+    // increment, so reverse heads walk backwards even past index 32768 where
+    // the raw position no longer fits an int32.
+    h->pos += (uint32_t)h->step;
 
     int32_t c = (int32_t)s - 128;
     c = (c * (int32_t)h->gain) >> 8;
@@ -209,7 +240,7 @@ uint8_t reel_peek(uint32_t idx) { return (idx < REEL_LEN) ? s_reel[idx] : 128; }
 uint32_t reel_write_pos(void) { return s_wptr; }
 uint32_t reel_head_pos(int head) {
     if (head < 0 || head >= REEL_NHEADS) return 0;
-    return s_head[head].pos >> 16;
+    return fold_idx(&s_head[head]);
 }
 uint32_t reel_splice_start(int i) {
     if (i < 0) i = 0;

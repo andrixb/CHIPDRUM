@@ -319,7 +319,7 @@ Eurorack input expects; AC-couple it if you are going somewhere else.
 stored samples are unsigned 8-bit, a ~50 dB ceiling, and every 8-bit code still
 lands on its own duty step — so there the kit is the limit, not the hardware.
 Flash is not what holds it there either, since all three kits together are 64 KB
-and the whole CHIPMODS firmware occupies 142 KB of the RP2040's 2 MB. A deeper
+and the whole CHIPMODS firmware occupies 145 KB of the RP2040's 2 MB. A deeper
 sample format is affordable if you want one.
 
 In round numbers: **roughly 10-bit audio in a 12.5 kHz band** — a little finer
@@ -481,10 +481,10 @@ prefix is the updater's original name, kept unchanged in `web/serve.py`.
 ## Tests
 
 CHIPMODS's musical algorithms (CHIPDRUM's Truchets banks and X/Y morphing,
-Turing register, clock math, PWM pitch range, clock-input detection and drum
-synthesis, plus the new reel and CV-brain math) can be checked on your Mac
-without any hardware — the test compiles the real firmware sources, so it
-cannot drift from what the module plays:
+Turing register, clock math, PWM pitch range, clock-input detection, drum
+synthesis, plus the reel overdub/interpolation/window math) can be checked on
+your Mac without any hardware — the test compiles the real firmware sources,
+so it cannot drift from what the module plays:
 
 ```sh
 ./test/run.sh
@@ -492,21 +492,29 @@ cannot drift from what the module plays:
 
 It asserts that every note the UI can reach fits within the 16-bit PWM wrap;
 that the clock input triggers on everything from 3.3 V
-logic down to a 0.4 V attenuated gate while ignoring noise; and that every
+logic down to a 0.4 V attenuated gate while ignoring noise; that every
 synth drum is loud, decays to silence and releases its voice at all TUNE and
-DECAY extremes — a stuck voice would drone forever on an output jack.
+DECAY extremes — a stuck voice would drone forever on an output jack; and
+that both forward and reversed reel heads never leave their splice window.
 
 ## Architecture
 
 - **Core 0** (realtime): clock engine, clock-input sampling, mode ticks, voice
   glide/sweep updates, buttons, plus the 25 kHz audio interrupt driving the
   sampler and drum synth. Loop runs at hundreds of kHz; ticks land with
-  microsecond accuracy.
-- **Core 1**: OLED rendering at ~15 FPS (blocking I2C never stalls the audio
-  path). Mode `draw()` callbacks run here and only read state.
+  microsecond accuracy. A 2 s watchdog resets the module if the loop ever
+  hangs — a silent rack module is worse than a rebooting one.
+- **Core 1**: OLED rendering at ~15 FPS (blocking I2C never stalls the CHIPMODS
+  audio path). Mode `draw()` callbacks run here and only read state.
 - PWM voices: fixed clkdiv 128 → 976.6 kHz counters; pitch set via wrap, gate
   via channel level; per-voice glide (time constant) and exponential pitch
   sweeps for percussion.
+- Multi-word state handed to the audio interrupt — sample triggers, reel head
+  windows — is updated with interrupts disabled, and every ADC read follows
+  its channel switch with the settle delay the RP2040 datasheet asks for.
+- The two drum modes share their sequencer (`src/drum_seq.c`): 32-step
+  planning, FILL deadband, bar-boundary X/Y jumps and swing are one
+  implementation; DRUMS and SYNDRUM only differ in how `fire()` makes sound.
 - Settings persist in the last 4 KB flash sector (`flash_safe_execute`,
   saved only on the button combo to avoid wear).
 

@@ -41,8 +41,9 @@ void ssd1306_init(void) {
 void ssd1306_show(const uint8_t *fb) {
     cmd(0x21); cmd(0); cmd(127); // column range
     cmd(0x22); cmd(0); cmd(7);   // page range
-    static uint8_t buf[OLED_FB_SIZE + 1];
-    buf[0] = 0x40; // data stream
-    for (int i = 0; i < OLED_FB_SIZE; i++) buf[i + 1] = fb[i];
-    i2c_write_blocking(OLED_I2C, OLED_ADDR, buf, sizeof(buf), false);
+    // Send the data-stream control byte without STOP, then the framebuffer
+    // straight out of it: no 1 KB copy per frame on core 1.
+    static const uint8_t ctrl = 0x40;
+    i2c_write_blocking(OLED_I2C, OLED_ADDR, &ctrl, 1, true);
+    i2c_write_blocking(OLED_I2C, OLED_ADDR, fb, OLED_FB_SIZE, false);
 }
