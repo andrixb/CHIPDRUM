@@ -30,6 +30,7 @@ typedef struct {
     uint32_t pos;   // 16.16 fixed point position into pcm
     uint32_t step;  // 16.16 increment; 1<<16 = native pitch
     uint16_t velocity; // Q8 amplitude, 256 = unity
+    int16_t hold;      // >=0: steady DAC level (CV output), -1: normal
     bool playing;
     bool active;    // voice is in DAC mode
     bool synth;     // render from drumsynth instead of PCM
@@ -71,6 +72,12 @@ static void __not_in_flash_func(alarm_isr)(void) {
             pwm_set_chan_level(s->slice, s->chan, reel_render_level(v));
             continue;
         }
+        // Steady hold level: a voice parked at one voltage (MARBLE CV outs).
+        if (s->hold >= 0) {
+            pwm_set_chan_level(s->slice, s->chan,
+                               DAC_FROM_PCM8((uint8_t)s->hold));
+            continue;
+        }
         // idle at mid-scale so nothing steps the output when silent
         uint16_t level = DAC_FROM_PCM8(128);
         if (s->synth) {
@@ -96,6 +103,7 @@ void sampler_init(void) {
         sp[v].chan = pwm_gpio_to_channel(PINS[v]);
         sp[v].active = false;
         sp[v].playing = false;
+        sp[v].hold = -1;
     }
     // Claim the alarm so a clash with the SDK's alarm pool panics at boot
     // instead of silently corrupting timing later.
@@ -112,6 +120,7 @@ void sampler_enable(int voice, bool on) {
     if (s->active == on) return;
     s->active = on;
     s->playing = false;
+    s->hold = -1;
     if (!on) s->synth = false;
     if (on) {
         voice_set_sample_mode(voice, true); // stop voice_update touching it
@@ -126,6 +135,13 @@ void sampler_enable(int voice, bool on) {
 }
 
 bool sampler_enabled(int voice) { return sp[voice].active; }
+
+void sampler_hold(int voice, int pcm8) {
+    if (voice < 0 || voice >= NUM_VOICES) return;
+    if (pcm8 < -1) pcm8 = -1;
+    if (pcm8 > 255) pcm8 = 255;
+    sp[voice].hold = (int16_t)pcm8;
+}
 
 void sampler_set_synth(int voice, bool on) {
     sp[voice].synth = on;
