@@ -334,6 +334,30 @@ In round numbers: **roughly 10-bit audio in a 12.5 kHz band** — a little finer
 than the 8-bit drum machines of the early eighties, and close to an SP-1200 in
 bandwidth. The grain is a characteristic of the format, not a defect in it.
 
+## Web updater (build & flash from the browser)
+
+```sh
+./web/update.sh          # starts a local server and opens the browser
+```
+
+A dark-panel page at `http://127.0.0.1:8123` where you:
+
+- pick **any branch of the repo** (`master`, `morph`, `local` = this
+  checkout on disk) and hit **BUILD**, or **BUILD + FLASH** — the server
+  shallow-clones the branch, runs cmake against your Pico SDK and writes the
+  resulting `.uf2` to the module over USB, reusing the same button-free
+  bootloader reboot as `flash.sh`;
+- keep a library of past builds under `web/firmware/` and **flash an
+  installed firmware without rebuilding**;
+- watch live LEDs for *module on USB / bootloader ready / CircuitPython* and
+  a streaming build log.
+
+It is a local helper, not a site: browsers cannot write to the RP2040
+bootloader disk, so `serve.py` does that part for the page. Stdlib only,
+binds to 127.0.0.1, branch names are regex-whitelisted before touching git.
+Env knobs: `CHIPGENE_REPO`, `PICO_SDK_PATH`, `CHIPGENE_WEBPORT`,
+`CHIPGENE_NOOPEN=1` (no browser pop-up, for scripting).
+
 ## Tests
 
 The musical algorithms (Truchets banks and X/Y morphing, Turing register,
