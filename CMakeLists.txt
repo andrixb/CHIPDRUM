@@ -34,6 +34,7 @@ add_executable(chipdrum
     src/modes/mode_drums.c
     src/modes/mode_syndrum.c
     src/modes/mode_morph.c
+    src/modes/mode_marble.c
 )
 
 target_include_directories(chipdrum PRIVATE src)

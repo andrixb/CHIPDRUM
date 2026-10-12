@@ -28,6 +28,9 @@ void sampler_trigger(int voice, const uint8_t *pcm, uint32_t len,
 // same 8-bit DAC mode, so a voice must already be sampler_enable()d.
 void sampler_set_synth(int voice, bool on);
 
+// Park a voice at one steady DAC level (CV output); -1 releases the hold.
+void sampler_hold(int voice, int pcm8);
+
 bool sampler_playing(int voice);
 // 0..255 progress through the current sample, for the display
 uint8_t sampler_progress(int voice);

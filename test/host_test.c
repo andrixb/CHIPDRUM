@@ -31,6 +31,9 @@ static uint32_t rng_u32(void) {
 }
 static float rng_f(void) { return (rng_u32() >> 8) * (1.0f / 16777216.0f); }
 
+// ---- MARBLE mode helpers (src/marble.h) ----
+#include "../src/marble.h"
+
 static int pcm_peak(const uint8_t *pcm, int len) {
     int peak = 0;
     for (int i = 0; i < len; i++) {
@@ -600,6 +603,26 @@ int main(void) {
                     if (drumsynth_active(0)) ok = 0; // must always end
                 }
         check("all TUNE/DECAY extremes stay in range and terminate", ok, "");
+    }
+
+    printf("\n== MARBLE CV mapping (src/marble.h) ==\n");
+    {
+        int mono = 1;
+        for (int res = 2; res <= 16; res++) {
+            check("marble_cv top rung is full scale", marble_cv_u8(res, res - 1) == 255, "res<2> top != 255");
+            check("marble_cv bottom rung is zero", marble_cv_u8(res, 0) == 0, "bottom != 0");
+            int prev = -1;
+            for (int i = 0; i < res; i++) {
+                int v = marble_cv_u8(res, i);
+                if (v <= prev) mono = 0;
+                prev = v;
+            }
+        }
+        check("marble_cv ladders are monotonic for every resolution", mono, "");
+        check("marble_cv wraps indices both ways",
+              marble_cv_u8(9, 9) == marble_cv_u8(9, 0) &&
+              marble_cv_u8(9, -1) == marble_cv_u8(9, 8), "wrap broken");
+        check("marble_cv clamps tiny RES", marble_cv_u8(1, 3) <= 255, "");
     }
 
     printf("\n%s\n", fails ? "FAILURES PRESENT" : "ALL HOST TESTS PASSED");

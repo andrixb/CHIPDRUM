@@ -1,11 +1,15 @@
-# CHIPDRUM
+# CHIPMODS
 
-Generative drum, bass & drone voice for Eurorack, on a Raspberry Pi Pico
-(RP2040). C firmware built with the Pico SDK.
+Generative drum, bass, drone & reel voices plus a probabilistic CV brain for
+Eurorack, on a Raspberry Pi Pico (RP2040). C firmware built with the Pico SDK.
 
-Three PWM square-wave oscillators driven by six generative modes: two drum
-machines, a Turing-machine bass loop and three drones. External clock input
-and master clock output.
+Three PWM jacks that serve as square-wave oscillators, 8-bit DAC outputs or
+steady CV, depending on the mode — eight generative modes: two drum machines,
+a Turing-machine bass loop, three drones, a live-recorded Morphagene-flavoured
+reel looper (MORPH) and a Marbles-flavoured random-voltage brain (MARBLE).
+External clock input and master clock output. A web updater
+([`./web/update.sh`](#web-updater-build--flash-from-the-browser)) builds any
+branch and flashes the module over USB with no buttons.
 
 It runs on stock CHIPTUNE hardware, designed and built by
 [TECLA](https://www.instagram.com/tecla.cat/), and replaces the
@@ -51,6 +55,8 @@ LED3–7 = selected parameter slot.
 | **DRONER** | Three detuned voices on the root, rhythmically chopped, duty-cycle LFO for movement | detune width (cents) |
 | **ORGAN** | Harmonic-stack drone: fundamental + pedal + a drawbar harmonic. Three LFOs at irrational rate ratios keep the timbres drifting, so the stack shimmers instead of pulsing | drawbar registration (2nd…8th harmonic) |
 | **GRINDER** | Beating/dissonant drone. The third voice sits an INTERVAL away and is offset by CV1 in **hertz**, so the beat rate stays constant as you transpose. PULSE narrows the duty for a reedy grind | beat rate (0.05–8 Hz) |
+| **MORPH** | Live-reel voice (Morphagene-flavoured): record the CV1 jack into a 3 s RAM reel with Sound-On-Sound overdub, then play it back as three looping gene heads across 8 splices | MORPH crossfade between the current and next splice (live) |
+| **MARBLE** | Probabilistic CV + gate brain (Marbles-flavoured): two stepped-CV streams and a gate stream whose fire probabilities come from the same Truchets 5×5 morph banks the drums use | CHAOS: blends the map's deterministic odds into coin flips |
 
 The three drones share a **CHOP** parameter (HOLD, 8THS, GALLOP, OFFBEAT,
 QUARTER, TRIPLET) that rhythmically gates all voices. Their detuning and
@@ -66,6 +72,59 @@ Bass and drone modes carry three global slots — **ROOT** (C–B), **OCT**
 (C1–C4) and **GATE** (10–90 % of the step). The drum modes hide them, since
 none of the three mean anything to a one-shot.
 
+## Reel modes: MORPH & MARBLE
+
+These two modes share the audio engine at a different job: instead of one-shot
+samples they put the three PWM slices to work continuously — as **gene heads
+reading a live-recorded reel** (MORPH) or as **steady CV levels** (MARBLE).
+
+**MORPH — the live reel.** The CV1 jack (GP26) becomes a DC-coupled audio
+input, sampled at 25 kHz into a 3-second RAM reel. Tap EXTRA2 to punch REC in
+and out; while recording, the reel **overdubs itself** through the SOS
+parameter (0 % = replace, 100 % = mix new over old — tape-style layering).
+Playback is three heads, mixed at the panel jacks like everything else:
+
+| Head | Jack | Material |
+|---|---|---|
+| H1 | V1 | the selected splice (gene) |
+| H2 | V2 | the next splice — **CV1 crossfades H1↔H2 live** (the MORPH knob) |
+| H3 | V3 | the same gene at half speed, a shadow bed |
+
+`SPLICE` selects one of 8 genes, `SIZE` trims the loop to 40–800 ms, `SPEED`
+runs the heads ±12 semitones (**negative = reverse**), `FX` adds bit‑crush or
+tilt filtering (feedforward only, so they can never run away). Heads re-arm
+on every clock tick — the reel locks to internal tempo or a clock patched
+into CLK IN, and EXTRA1's manual tick re-triggers by hand. Hold EXTRA2 2 s to
+jump to a random splice. The reel lives in **SRAM**: power off loses it
+(everything else, including settings, still persists).
+
+To patch audio in, mind the jack's 0–3.3 V window — Eurorack line/CV levels
+are ±5 V, so attenuate and bias (a −5 V offset, or a diode + resistor clamp
+into the pin) rather than feed it straight. The software removes DC and
+clamps, but a hard negative swing below the rail is the one thing it cannot
+digest.
+
+**MARBLE — the random-voltage brain.** V1 and V2 emit **stepped CV** (0–3.3 V
+at whatever level the DAC is parked at — through the recommended 1 kΩ + 10 nF
+output RC these are legitimate control voltages), V3 emits a gate, CLK OUT
+keeps pulsing. The probabilities come from the same Truchets banks the drum
+modes use, so BANK/X/Y navigate a familiar 5×5 morph map: a node's level on a
+step is the chance that stream *fires* on that step. A firing CV stream steps
+a random-walk ladder; non-firing streams **hold** their voltage — the
+sample-and-hold behavior Marbles is known for. `RES` quantizes the ladder to
+2–16 steps, `ROT` rotates which rung is home, `JUMP` sets the stride
+(1 = scanning, 8 = leaping), `SMOOTH` blends between hard S&H (0 %) and
+glide (100 %, Marbles' mode 2), `GWID` sets gate width. CV1 is live **CHAOS**:
+it blends the map's deterministic odds toward coin flips. Hold EXTRA2 2 s to
+re-roll X/Y and the ladders; a tap restarts both ladders at the next bar.
+
+Engine notes: the sampler grew a per-voice steady `hold` level, and the reel
+capture path runs only when a reel mode is active — drum timing, sample
+playback and synth voices are byte-for-byte the code that already shipped.
+The ADC's select+read is now atomic against the audio interrupt, which is
+what makes 25 kHz input sampling safe next to the CV sliders and the analog
+external-clock reader.
+
 ## Controls
 
 | Button | Short press | Long press |
@@ -73,7 +132,7 @@ none of the three mean anything to a one-shot.
 | UP / DOWN | Select slot: MODE → globals (bass modes only) → mode params | — |
 | LEFT / RIGHT | Change mode / adjust value (hold to repeat, accelerates) | — |
 | EXTRA1 | **Tap**: manual clock tick | Status screen (1.5 s) |
-| EXTRA2 | Restart the bar without stopping | Reset mode; in DRUMS/SYNDRUM, hold 2 s to queue random X/Y for the next bar |
+| EXTRA2 | Restart the bar without stopping — in MORPH: punch REC in/out | Reset mode; hold 2 s for the mode's re-roll: DRUMS/SYNDRUM queue random X/Y for the next bar, MORPH jumps splice, MARBLE re-rolls X/Y + ladders |
 | EXTRA1+EXTRA2 | Save root, octave and gate immediately (mode auto-saves after 1 s) | — |
 
 ## Building
@@ -333,6 +392,30 @@ format is affordable if you want one.
 In round numbers: **roughly 10-bit audio in a 12.5 kHz band** — a little finer
 than the 8-bit drum machines of the early eighties, and close to an SP-1200 in
 bandwidth. The grain is a characteristic of the format, not a defect in it.
+
+## Web updater (build & flash from the browser)
+
+```sh
+./web/update.sh          # starts a local server and opens the browser
+```
+
+A dark-panel page at `http://127.0.0.1:8123` where you:
+
+- pick **any branch of the repo** (`master`, `morph`, `local` = this
+  checkout on disk) and hit **BUILD**, or **BUILD + FLASH** — the server
+  shallow-clones the branch, runs cmake against your Pico SDK and writes the
+  resulting `.uf2` to the module over USB, reusing the same button-free
+  bootloader reboot as `flash.sh`;
+- keep a library of past builds under `web/firmware/` and **flash an
+  installed firmware without rebuilding**;
+- watch live LEDs for *module on USB / bootloader ready / CircuitPython* and
+  a streaming build log.
+
+It is a local helper, not a site: browsers cannot write to the RP2040
+bootloader disk, so `serve.py` does that part for the page. Stdlib only,
+binds to 127.0.0.1, branch names are regex-whitelisted before touching git.
+Env knobs: `CHIPGENE_REPO`, `PICO_SDK_PATH`, `CHIPGENE_WEBPORT`,
+`CHIPGENE_NOOPEN=1` (no browser pop-up, for scripting).
 
 ## Tests
 
