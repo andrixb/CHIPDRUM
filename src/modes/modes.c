@@ -12,6 +12,7 @@ extern const mode_t MODE_ORGAN;
 extern const mode_t MODE_GRINDER;
 extern const mode_t MODE_DRUMS;
 extern const mode_t MODE_SYNDRUM;
+extern const mode_t MODE_MORPH;
 
 const mode_t *const MODES[] = {
     // Rhythmic modes first. Slot 0 is also the clean-boot default.
@@ -22,6 +23,9 @@ const mode_t *const MODES[] = {
     &MODE_DRONER,
     &MODE_ORGAN,
     &MODE_GRINDER,
+    // Live-reel Morphagene-style mode last: existing users boot to DRUMS
+    // exactly as before; nothing changes unless you scroll to it.
+    &MODE_MORPH,
 };
 const int NUM_MODES = sizeof(MODES) / sizeof(MODES[0]);
 

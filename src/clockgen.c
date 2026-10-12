@@ -2,6 +2,7 @@
 
 #include "hardware/adc.h"
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 #include "pico/time.h"
 
 #include "config.h"
@@ -41,8 +42,12 @@ static uint16_t clk_now = 0;
 static uint64_t clk_decay_at = 0;
 
 static void clk_poll(uint64_t now) {
+    // Atomic for the same reason as hardware.c: the reel ISR also uses the
+    // ADC, and must not interleave between our select and read.
+    uint32_t irq = save_and_disable_interrupts();
     adc_select_input(ADC_CLK_IN);
     uint16_t v = adc_read();
+    restore_interrupts(irq);
     clk_now = v;
 
     bool decay_now = now >= clk_decay_at;

@@ -2,6 +2,7 @@
 
 #include "hardware/adc.h"
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 #include "pico/time.h"
 
 #include "config.h"
@@ -56,11 +57,20 @@ void led_startup_animation(void) {
 }
 
 uint16_t adc_read_cv1(void) {
+    // The audio ISR may steal the ADC for live-reel capture. The
+    // select+read pair must be atomic or the ISR can switch the channel
+    // between our select and our read and we return the wrong jack.
+    uint32_t irq = save_and_disable_interrupts();
     adc_select_input(ADC_CV1);
-    return adc_read();
+    uint16_t v = adc_read();
+    restore_interrupts(irq);
+    return v;
 }
 
 uint16_t adc_read_slider(void) {
+    uint32_t irq = save_and_disable_interrupts();
     adc_select_input(ADC_SLIDER);
-    return adc_read();
+    uint16_t v = adc_read();
+    restore_interrupts(irq);
+    return v;
 }

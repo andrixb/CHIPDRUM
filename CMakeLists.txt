@@ -14,6 +14,7 @@ add_executable(chipdrum
     src/hardware.c
     src/voice.c
     src/sampler.c
+    src/reel.c
     src/drumsynth.c
     src/truchet_patterns.c
     src/clockgen.c
@@ -32,6 +33,7 @@ add_executable(chipdrum
     src/modes/chop.c
     src/modes/mode_drums.c
     src/modes/mode_syndrum.c
+    src/modes/mode_morph.c
 )
 
 target_include_directories(chipdrum PRIVATE src)

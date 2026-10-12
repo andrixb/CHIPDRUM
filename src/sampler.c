@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include "hardware/adc.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
 #include "hardware/sync.h"
@@ -9,6 +10,7 @@
 
 #include "config.h"
 #include "drumsynth.h"
+#include "reel.h"
 #include "samples.h"
 #include "voice.h"
 
@@ -50,9 +52,25 @@ static void __not_in_flash_func(alarm_isr)(void) {
         next_at = timer_hw->timerawl + PERIOD_US; // fell behind, resync
     timer_hw->alarm[ALARM_NUM] = next_at;
 
+    // Live-reel capture: one ADC read per 40 us tick, only when a reel mode
+    // is active AND recording. Cost ~5 us; zero cost otherwise (one branch).
+    // Main-loop ADC readers (hardware.c, clockgen.c) wrap their
+    // select+read in save_and_disable_interrupts(), so this cannot corrupt
+    // their channel selection mid-sequence.
+    if (reel_active() && reel_recording()) {
+        adc_select_input(ADC_CV1);
+        reel_capture_sample(adc_read());
+    }
+
     for (int v = 0; v < NUM_VOICES; v++) {
         splay_t *s = &sp[v];
         if (!s->active) continue;
+        // Reel modes own all three voices: continuous gene heads, not
+        // one-shots. Additive branch; drum/synth path below is untouched.
+        if (reel_active()) {
+            pwm_set_chan_level(s->slice, s->chan, reel_render_level(v));
+            continue;
+        }
         // idle at mid-scale so nothing steps the output when silent
         uint16_t level = DAC_FROM_PCM8(128);
         if (s->synth) {
