@@ -21,6 +21,7 @@
 #include "hardware.h"
 #include "mode.h"
 #include "persist.h"
+#include "reel.h"
 #include "rng.h"
 #include "sampler.h"
 #include "state.h"
@@ -47,6 +48,9 @@ static void toast(const char *msg, const char *detail, uint32_t ms) {
 static void switch_mode(int new_idx) {
     // neutralise per-mode voice settings before handing over. Sample mode is
     // released first so the incoming mode's reset() can claim it if it wants.
+    // Reel is also parked here so a recording can never bleed into drums.
+    reel_set_rec(false);
+    reel_enable(false);
     for (int v = 0; v < NUM_VOICES; v++) {
         sampler_enable(v, false);
         voice_gate(v, false);
